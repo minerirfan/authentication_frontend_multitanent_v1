@@ -1,16 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../infrastructure/storage/auth-store';
 import { useTenantStore } from '../../infrastructure/storage/tenant-store';
-import { GetUsersUseCase } from '../../application/use-cases/user/get-users.use-case';
-import { GetRolesUseCase } from '../../application/use-cases/role/get-roles.use-case';
-import { GetPermissionsUseCase } from '../../application/use-cases/permission/get-permissions.use-case';
-import { UserRepository } from '../../infrastructure/api/user.repository';
-import { RoleRepository } from '../../infrastructure/api/role.repository';
-import { PermissionRepository } from '../../infrastructure/api/permission.repository';
+import { useAuthPermissions } from '../../infrastructure/hooks/use-auth-permissions.hook';
+import { ServiceContainer } from '../../infrastructure/services/service-container';
 import { apiClient } from '../../infrastructure/api/api-client';
 import { PaginatedResult } from '../../shared/types/pagination';
 import { extractData } from '../../shared/utils/pagination';
+import { sanitizeText } from '../../shared/utils/sanitize';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Users, Shield, Key, Building2, TrendingUp, ArrowRight } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
@@ -29,6 +26,14 @@ export default function DashboardPage() {
   const { user } = useAuthStore();
   const { selectedTenant } = useTenantStore();
   const navigate = useNavigate();
+  const { isSuperAdmin, isAdmin } = useAuthPermissions();
+  
+  // Memoize admin status to avoid infinite re-renders
+  const adminStatus = useMemo(() => ({
+    isAdmin: isAdmin(),
+    isSuperAdmin: isSuperAdmin()
+  }), [user?.roles]);
+  
   const [stats, setStats] = useState({
     users: 0,
     roles: 0,
@@ -37,35 +42,30 @@ export default function DashboardPage() {
   });
   const [loading, setLoading] = useState(true);
 
-  const isSuperAdmin = user?.roles?.includes('super_admin') || false;
-  const isAdmin = isSuperAdmin || user?.roles?.includes('admin') || false;
-
   // Redirect regular users to profile
   useEffect(() => {
-    if (!isAdmin && user?.id) {
+    if (!adminStatus.isAdmin && user?.id) {
       navigate(`/profile/${user.id}`, { replace: true });
     }
-  }, [isAdmin, user?.id, navigate]);
+  }, [adminStatus.isAdmin, user?.id, navigate]);
 
   useEffect(() => {
-    if (isAdmin) {
+    if (adminStatus.isAdmin) {
       loadStats();
     }
-  }, [selectedTenant, isAdmin]);
+  }, [selectedTenant, adminStatus.isAdmin]);
 
   const loadStats = async () => {
     try {
-      const userRepository = new UserRepository();
-      const roleRepository = new RoleRepository();
-      const permissionRepository = new PermissionRepository();
-      const getUsersUseCase = new GetUsersUseCase(userRepository);
-      const getRolesUseCase = new GetRolesUseCase(roleRepository);
-      const getPermissionsUseCase = new GetPermissionsUseCase(permissionRepository);
+      const serviceContainer = ServiceContainer.getInstance();
+      const getUsersUseCase = serviceContainer.users.getUsers;
+      const getRolesUseCase = serviceContainer.roles.getRoles;
+      const getPermissionsUseCase = serviceContainer.permissions.getPermissions;
 
       const users = await getUsersUseCase.execute();
 
       let roles: any[] = [];
-      if (isSuperAdmin && !selectedTenant) {
+      if (adminStatus.isSuperAdmin && !selectedTenant) {
         try {
           const tenantsResponse = await apiClient.get<PaginatedResult<Tenant> | Tenant[]>('/tenants');
           if (tenantsResponse.success && tenantsResponse.results) {
@@ -95,7 +95,7 @@ export default function DashboardPage() {
       const permissions = await getPermissionsUseCase.execute();
 
       let tenantsCount = 0;
-      if (isSuperAdmin) {
+      if (adminStatus.isSuperAdmin) {
         try {
           const tenantsResponse = await apiClient.get<PaginatedResult<Tenant> | Tenant[]>('/tenants');
           if (tenantsResponse.success && tenantsResponse.results) {
@@ -152,12 +152,12 @@ export default function DashboardPage() {
       href: '/permissions',
     },
     {
-      title: isSuperAdmin ? 'Tenants' : 'Tenant',
-      value: isSuperAdmin ? stats.tenants : 1,
-      description: isSuperAdmin ? 'Total tenants' : 'Your organization',
+      title: adminStatus.isSuperAdmin ? 'Tenants' : 'Tenant',
+      value: adminStatus.isSuperAdmin ? stats.tenants : 1,
+      description: adminStatus.isSuperAdmin ? 'Total tenants' : 'Your organization',
       icon: Building2,
       color: 'from-green-500 to-emerald-500',
-      href: isSuperAdmin ? '/tenants' : undefined,
+      href: adminStatus.isSuperAdmin ? '/tenants' : undefined,
     },
   ];
 
@@ -179,7 +179,7 @@ export default function DashboardPage() {
         <div className="space-y-1">
           <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
           <p className="text-muted-foreground">
-            Welcome back, <span className="font-semibold">{user?.firstName}</span>! Here's what's happening.
+            Welcome back, <span className="font-semibold">{sanitizeText(user?.firstName || '')}</span>! Here's what's happening.
           </p>
         </div>
       </div>
@@ -195,7 +195,7 @@ export default function DashboardPage() {
             >
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">
-                  {stat.title}
+                  {sanitizeText(stat.title)}
                 </CardTitle>
                 <div className={`rounded-lg bg-gradient-to-br ${stat.color} p-2.5 text-white group-hover:scale-110 transition-transform`}>
                   <Icon className="h-4 w-4" />
@@ -248,7 +248,7 @@ export default function DashboardPage() {
                     cx="50%"
                     cy="50%"
                     labelLine={false}
-                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                    label={({ name, percent }) => `${sanitizeText(name)} ${(percent * 100).toFixed(0)}%`}
                     outerRadius={80}
                     fill="#8884d8"
                     dataKey="value"
@@ -266,8 +266,8 @@ export default function DashboardPage() {
 
         <Card className="border-0 shadow-sm">
           <CardHeader>
-            <CardTitle>Resource Comparison</CardTitle>
-            <CardDescription>Side-by-side comparison of metrics</CardDescription>
+            <CardTitle>{sanitizeText('Resource Comparison')}</CardTitle>
+            <CardDescription>{sanitizeText('Side-by-side comparison of metrics')}</CardDescription>
           </CardHeader>
           <CardContent>
             {loading ? (
@@ -295,8 +295,8 @@ export default function DashboardPage() {
 
       <Card className="border-0 shadow-sm">
         <CardHeader>
-          <CardTitle>Quick Actions</CardTitle>
-          <CardDescription>Common tasks and shortcuts</CardDescription>
+          <CardTitle>{sanitizeText('Quick Actions')}</CardTitle>
+          <CardDescription>{sanitizeText('Common tasks and shortcuts')}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -306,8 +306,8 @@ export default function DashboardPage() {
               onClick={() => navigate('/users')}
             >
               <div className="flex-1 text-left">
-                <div className="font-semibold mb-1">Create User</div>
-                <div className="text-sm text-muted-foreground">Add a new user to your tenant</div>
+                <div className="font-semibold mb-1">{sanitizeText('Create User')}</div>
+                <div className="text-sm text-muted-foreground">{sanitizeText('Add a new user to your tenant')}</div>
               </div>
               <ArrowRight className="h-4 w-4 ml-2" />
             </Button>
@@ -317,20 +317,20 @@ export default function DashboardPage() {
               onClick={() => navigate('/roles')}
             >
               <div className="flex-1 text-left">
-                <div className="font-semibold mb-1">Manage Roles</div>
-                <div className="text-sm text-muted-foreground">Configure user roles and permissions</div>
+                <div className="font-semibold mb-1">{sanitizeText('Manage Roles')}</div>
+                <div className="text-sm text-muted-foreground">{sanitizeText('Configure user roles and permissions')}</div>
               </div>
               <ArrowRight className="h-4 w-4 ml-2" />
             </Button>
-            {isSuperAdmin && (
+            {adminStatus.isSuperAdmin && (
               <Button
                 variant="outline"
                 className="h-auto p-4 justify-start hover:bg-accent transition-colors"
                 onClick={() => navigate('/tenants')}
               >
                 <div className="flex-1 text-left">
-                  <div className="font-semibold mb-1">Create Tenant</div>
-                  <div className="text-sm text-muted-foreground">Register a new tenant organization</div>
+                  <div className="font-semibold mb-1">{sanitizeText('Create Tenant')}</div>
+                  <div className="text-sm text-muted-foreground">{sanitizeText('Register a new tenant organization')}</div>
                 </div>
                 <ArrowRight className="h-4 w-4 ml-2" />
               </Button>

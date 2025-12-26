@@ -1,12 +1,14 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { useAuthStore } from '../../infrastructure/storage/auth-store';
+import { sanitizeText } from '../../shared/utils/sanitize';
 
 export default function ApiDocsPage() {
   const { accessToken } = useAuthStore();
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
+    // Note: In production, replace alert with a toast notification
     alert('Copied to clipboard!');
   };
 
@@ -50,7 +52,7 @@ export default function ApiDocsPage() {
               Include the access token in the Authorization header:
             </p>
             <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
-              <code className="text-sm font-mono">Authorization: Bearer {accessToken?.slice(0, 20)}...</code>
+              <code className="text-sm font-mono">Authorization: Bearer {sanitizeText(accessToken?.slice(0, 20) || '')}...</code>
               <Button
                 variant="outline"
                 size="sm"

@@ -3,14 +3,8 @@ import { Navigate, useNavigate } from 'react-router-dom';
 import { ColumnDef } from '@tanstack/react-table';
 import { useAuthStore } from '../../infrastructure/storage/auth-store';
 import { useTenantStore } from '../../infrastructure/storage/tenant-store';
-import { GetUsersUseCase } from '../../application/use-cases/user/get-users.use-case';
-import { CreateUserUseCase } from '../../application/use-cases/user/create-user.use-case';
-import { UpdateUserUseCase } from '../../application/use-cases/user/update-user.use-case';
-import { DeleteUserUseCase } from '../../application/use-cases/user/delete-user.use-case';
-import { GetUserUseCase } from '../../application/use-cases/user/get-user.use-case';
-import { UserRepository } from '../../infrastructure/api/user.repository';
-import { RoleRepository } from '../../infrastructure/api/role.repository';
-import { GetRolesUseCase } from '../../application/use-cases/role/get-roles.use-case';
+import { useAuthPermissions } from '../../infrastructure/hooks/use-auth-permissions.hook';
+import { ServiceContainer } from '../../infrastructure/services/service-container';
 import { User, Role } from '../../shared/types';
 import { getErrorMessage } from '../../shared/utils/error-handler';
 import { format } from 'date-fns';
@@ -32,26 +26,32 @@ import { ColumnHeader } from '../components/data-table/ColumnHeader';
 import { TableSkeleton } from '../components/ui/loading';
 import { useToast } from '../../shared/hooks/use-toast';
 import { Pencil, Trash2, Eye, UserPlus } from 'lucide-react';
+import { sanitizeText } from '../../shared/utils/sanitize';
 
 export default function UsersPage() {
   const { user } = useAuthStore();
   const { selectedTenant } = useTenantStore();
-  const { toast } = useToast();
+  const { isSuperAdmin, isAdmin } = useAuthPermissions();
   const navigate = useNavigate();
-  const isSuperAdmin = user?.roles?.includes('super_admin') || false;
-  const isAdmin = isSuperAdmin || user?.roles?.includes('admin') || false;
+  const { toast } = useToast();
+  
+  // Memoize admin status to avoid infinite re-renders
+  const adminStatus = useMemo(() => ({
+    isSuperAdmin: isSuperAdmin(),
+    isAdmin: isAdmin()
+  }), [user?.roles]);
 
-  if (isSuperAdmin && !selectedTenant) {
+  if (adminStatus.isSuperAdmin && !selectedTenant) {
     return <Navigate to="/tenants" replace />;
   }
-
+  
   // Regular users (non-admin) should not access this page
-  if (!isAdmin) {
+  if (!adminStatus.isAdmin) {
     return <Navigate to="/profile" replace />;
   }
 
-  const [users, setUsers] = useState<User[]>([]);
-  const [roles, setRoles] = useState<Role[]>([]);
+  const [usersData, setUsersData] = useState<User[]>([]);
+  const [rolesData, setRolesData] = useState<Role[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [showEditForm, setShowEditForm] = useState(false);
@@ -71,14 +71,14 @@ export default function UsersPage() {
     roleIds: [] as string[],
   });
 
-  const userRepository = new UserRepository();
-  const roleRepository = new RoleRepository();
-  const getUsersUseCase = new GetUsersUseCase(userRepository);
-  const getUserUseCase = new GetUserUseCase(userRepository);
-  const createUserUseCase = new CreateUserUseCase(userRepository);
-  const updateUserUseCase = new UpdateUserUseCase(userRepository);
-  const deleteUserUseCase = new DeleteUserUseCase(userRepository);
-  const getRolesUseCase = new GetRolesUseCase(roleRepository);
+  const serviceContainer = ServiceContainer.getInstance();
+  const { users, roles } = serviceContainer;
+  const getUsersUseCase = users.getUsers;
+  const getUserUseCase = users.getUser;
+  const createUserUseCase = users.createUser;
+  const updateUserUseCase = users.updateUser;
+  const deleteUserUseCase = users.deleteUser;
+  const getRolesUseCase = roles.getRoles;
 
   useEffect(() => {
     loadData();
@@ -86,16 +86,16 @@ export default function UsersPage() {
 
   const loadData = async () => {
     try {
-      const [usersData, rolesData] = await Promise.all([
+      const [usersResult, rolesResult] = await Promise.all([
         getUsersUseCase.execute(),
         getRolesUseCase.execute(),
       ]);
-      setUsers(Array.isArray(usersData) ? usersData : []);
-      setRoles(Array.isArray(rolesData) ? rolesData : []);
+      setUsersData(Array.isArray(usersResult) ? usersResult : []);
+      setRolesData(Array.isArray(rolesResult) ? rolesResult : []);
     } catch (error) {
       console.error('Failed to load data:', error);
-      setUsers([]);
-      setRoles([]);
+      setUsersData([]);
+      setRolesData([]);
     } finally {
       setLoading(false);
     }
@@ -124,12 +124,23 @@ export default function UsersPage() {
   const handleEdit = async (userId: string) => {
     try {
       const user = await getUserUseCase.execute(userId);
+      // Handle both role objects (from User type) and role strings (from AuthResponse)
+      const roleIds = user.roles?.map((r: any) => {
+        // If r is a string, find the role in rolesData
+        if (typeof r === 'string') {
+          const role = rolesData.find((role) => role.name === r);
+          return role?.id;
+        }
+        // If r is an object with id, use its id
+        return r.id;
+      }).filter((id): id is string => id !== undefined) || [];
+      
       setEditFormData({
         email: user.email,
         firstName: user.firstName,
         lastName: user.lastName,
         password: '',
-        roleIds: user.roles.map((r) => r.id),
+        roleIds: roleIds,
       });
       setSelectedUser(user);
       setShowEditForm(true);
@@ -224,14 +235,14 @@ export default function UsersPage() {
             <div className="flex items-center gap-3">
               <Avatar className="h-8 w-8">
                 <AvatarFallback className="bg-primary text-primary-foreground">
-                  {user.firstName[0]}{user.lastName[0]}
+                  {sanitizeText(user.firstName?.[0] || '')}{sanitizeText(user.lastName?.[0] || '')}
                 </AvatarFallback>
               </Avatar>
               <div>
                 <div className="font-medium">
-                  {user.firstName} {user.lastName}
+                  {sanitizeText(user.firstName || '')} {sanitizeText(user.lastName || '')}
                 </div>
-                <div className="text-sm text-muted-foreground">{user.email}</div>
+                <div className="text-sm text-muted-foreground">{sanitizeText(user.email || '')}</div>
               </div>
             </div>
           );
@@ -241,20 +252,25 @@ export default function UsersPage() {
         accessorKey: 'roles',
         header: ({ column }) => <ColumnHeader column={column} title="Roles" />,
         cell: ({ row }) => {
-          const roles = row.original.roles;
+          const user = row.original;
+          // Handle both role objects (from User type) and role strings (from AuthResponse)
+          const roleNames = user.roles?.map((r: any) =>
+            typeof r === 'string' ? r : r.name
+          ) || [];
+          
           return (
             <div className="flex flex-wrap gap-1">
-              {roles.length > 0 ? (
-                roles.slice(0, 2).map((role) => (
-                  <Badge key={role.id} variant="secondary">
-                    {role.name}
+              {roleNames.length > 0 ? (
+                roleNames.slice(0, 2).map((roleName: string) => (
+                  <Badge key={roleName} variant="secondary">
+                    {sanitizeText(roleName)}
                   </Badge>
                 ))
               ) : (
                 <span className="text-sm text-muted-foreground">No roles</span>
               )}
-              {roles.length > 2 && (
-                <Badge variant="outline">+{roles.length - 2}</Badge>
+              {roleNames.length > 2 && (
+                <Badge variant="outline">+{roleNames.length - 2}</Badge>
               )}
             </div>
           );
@@ -378,10 +394,10 @@ export default function UsersPage() {
               <div className="space-y-2">
                 <Label>Assign Roles</Label>
                 <div className="max-h-48 overflow-y-auto border rounded-lg p-4 space-y-2">
-                  {roles.length === 0 ? (
+                  {rolesData.length === 0 ? (
                     <p className="text-sm text-muted-foreground">No roles available</p>
                   ) : (
-                    roles.map((role) => (
+                    rolesData.map((role) => (
                       <label
                         key={role.id}
                         className="flex items-center space-x-2 cursor-pointer hover:bg-accent p-2 rounded"
@@ -393,9 +409,9 @@ export default function UsersPage() {
                           className="rounded border-gray-300"
                         />
                         <div className="flex-1">
-                          <span className="text-sm font-medium">{role.name}</span>
+                          <span className="text-sm font-medium">{sanitizeText(role.name)}</span>
                           {role.description && (
-                            <p className="text-xs text-muted-foreground">{role.description}</p>
+                            <p className="text-xs text-muted-foreground">{sanitizeText(role.description)}</p>
                           )}
                         </div>
                       </label>
@@ -418,7 +434,7 @@ export default function UsersPage() {
         </Dialog>
       </div>
 
-      <DataTable columns={columns} data={users} searchKey="email" searchPlaceholder="Search users..." />
+      <DataTable columns={columns} data={usersData} searchKey="email" searchPlaceholder="Search users..." />
 
       {/* Edit User Dialog */}
       <Dialog open={showEditForm} onOpenChange={setShowEditForm}>
@@ -473,10 +489,10 @@ export default function UsersPage() {
             <div className="space-y-2">
               <Label>Assign Roles</Label>
               <div className="max-h-48 overflow-y-auto border rounded-lg p-4 space-y-2">
-                {roles.length === 0 ? (
+                {rolesData.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No roles available</p>
                 ) : (
-                  roles.map((role) => (
+                  rolesData.map((role) => (
                     <label
                       key={role.id}
                       className="flex items-center space-x-2 cursor-pointer hover:bg-accent p-2 rounded"
@@ -488,9 +504,9 @@ export default function UsersPage() {
                         className="rounded border-gray-300"
                       />
                       <div className="flex-1">
-                        <span className="text-sm font-medium">{role.name}</span>
+                        <span className="text-sm font-medium">{sanitizeText(role.name)}</span>
                         {role.description && (
-                          <p className="text-xs text-muted-foreground">{role.description}</p>
+                          <p className="text-xs text-muted-foreground">{sanitizeText(role.description)}</p>
                         )}
                       </div>
                     </label>

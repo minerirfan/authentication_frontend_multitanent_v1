@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AuthRepository } from '../../infrastructure/api/auth.repository';
 import { getErrorMessage } from '../../shared/utils/error-handler';
+import { sanitizeText } from '../../shared/utils/sanitize';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -126,7 +127,7 @@ export default function OnboardPage() {
             </div>
             {error && (
               <div className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
-                {error}
+                {sanitizeText(error)}
               </div>
             )}
             <Button type="submit" className="w-full h-11 font-semibold" disabled={loading}>

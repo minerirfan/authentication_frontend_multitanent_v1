@@ -37,6 +37,7 @@ import {
   Home,
 } from 'lucide-react';
 import { User } from '../../shared/types';
+import { sanitizeText, sanitizeUrl } from '../../shared/utils/sanitize';
 
 export default function UserProfilePage() {
   const { userId } = useParams<{ userId: string }>();
@@ -212,18 +213,18 @@ export default function UserProfilePage() {
             <div className="flex items-center gap-6">
               <Avatar className="h-24 w-24">
                 <AvatarFallback className="bg-gradient-to-br from-primary to-primary/80 text-primary-foreground text-2xl">
-                  {user.firstName[0]}{user.lastName[0]}
+                  {sanitizeText(user.firstName?.[0] || '')}{sanitizeText(user.lastName?.[0] || '')}
                 </AvatarFallback>
               </Avatar>
               <div>
                 <h1 className="text-3xl font-bold tracking-tight">
-                  {user.firstName} {user.lastName}
+                  {sanitizeText(user.firstName || '')} {sanitizeText(user.lastName || '')}
                 </h1>
-                <p className="text-muted-foreground mt-1">{user.email}</p>
+                <p className="text-muted-foreground mt-1">{sanitizeText(user.email || '')}</p>
                 <div className="flex flex-wrap gap-2 mt-3">
                   {user.roles.map((role) => (
                     <Badge key={role.id} variant="secondary">
-                      {role.name}
+                      {sanitizeText(role.name)}
                     </Badge>
                   ))}
                 </div>
@@ -303,7 +304,7 @@ export default function UserProfilePage() {
                   <div>
                     <p className="text-sm font-medium">Date of Birth</p>
                     <p className="text-sm text-muted-foreground">
-                      {displayData?.dateOfBirth ? format(new Date(displayData.dateOfBirth), 'MMMM dd, yyyy') : 'Not set'}
+                      {displayData?.dateOfBirth ? sanitizeText(format(new Date(displayData.dateOfBirth), 'MMMM dd, yyyy')) : 'Not set'}
                     </p>
                   </div>
                 </div>
@@ -312,7 +313,7 @@ export default function UserProfilePage() {
                     <UserIcon className="h-4 w-4 text-muted-foreground" />
                     <div>
                       <p className="text-sm font-medium">Age</p>
-                      <p className="text-sm text-muted-foreground">{displayData.age} years</p>
+                      <p className="text-sm text-muted-foreground">{displayData.age ? `${sanitizeText(String(displayData.age))} years` : ''}</p>
                     </div>
                   </div>
                 )}
@@ -321,14 +322,14 @@ export default function UserProfilePage() {
                     <Hash className="h-4 w-4 text-muted-foreground" />
                     <div>
                       <p className="text-sm font-medium">CNIC</p>
-                      <p className="text-sm text-muted-foreground">{displayData.cnic}</p>
+                      <p className="text-sm text-muted-foreground">{sanitizeText(displayData.cnic || '')}</p>
                     </div>
                   </div>
                 )}
                 {displayData?.bio && (
                   <div>
                     <p className="text-sm font-medium mb-2">Bio</p>
-                    <p className="text-sm text-muted-foreground">{displayData.bio}</p>
+                    <p className="text-sm text-muted-foreground">{sanitizeText(displayData.bio || '')}</p>
                   </div>
                 )}
               </>
@@ -383,7 +384,7 @@ export default function UserProfilePage() {
                     <Phone className="h-4 w-4 text-muted-foreground" />
                     <div>
                       <p className="text-sm font-medium">Mobile</p>
-                      <p className="text-sm text-muted-foreground">{displayData.mobileNo}</p>
+                      <p className="text-sm text-muted-foreground">{sanitizeText(displayData.mobileNo || '')}</p>
                     </div>
                   </div>
                 )}
@@ -392,7 +393,7 @@ export default function UserProfilePage() {
                     <Phone className="h-4 w-4 text-muted-foreground" />
                     <div>
                       <p className="text-sm font-medium">Phone</p>
-                      <p className="text-sm text-muted-foreground">{displayData.phoneNo}</p>
+                      <p className="text-sm text-muted-foreground">{sanitizeText(displayData.phoneNo || '')}</p>
                     </div>
                   </div>
                 )}
@@ -401,7 +402,7 @@ export default function UserProfilePage() {
                     <MessageCircle className="h-4 w-4 text-muted-foreground" />
                     <div>
                       <p className="text-sm font-medium">WhatsApp</p>
-                      <p className="text-sm text-muted-foreground">{displayData.whatsappNo}</p>
+                      <p className="text-sm text-muted-foreground">{sanitizeText(displayData.whatsappNo || '')}</p>
                     </div>
                   </div>
                 )}
@@ -409,7 +410,7 @@ export default function UserProfilePage() {
                   <Mail className="h-4 w-4 text-muted-foreground" />
                   <div>
                     <p className="text-sm font-medium">Email</p>
-                    <p className="text-sm text-muted-foreground">{user.email}</p>
+                    <p className="text-sm text-muted-foreground">{sanitizeText(user.email || '')}</p>
                   </div>
                 </div>
               </>
@@ -456,7 +457,7 @@ export default function UserProfilePage() {
                     <MapPin className="h-4 w-4 text-muted-foreground" />
                     <div>
                       <p className="text-sm font-medium">City</p>
-                      <p className="text-sm text-muted-foreground">{displayData.city}</p>
+                      <p className="text-sm text-muted-foreground">{sanitizeText(displayData.city || '')}</p>
                     </div>
                   </div>
                 )}
@@ -465,7 +466,7 @@ export default function UserProfilePage() {
                     <Home className="h-4 w-4 text-muted-foreground mt-1" />
                     <div>
                       <p className="text-sm font-medium">Address</p>
-                      <p className="text-sm text-muted-foreground">{displayData.address}</p>
+                      <p className="text-sm text-muted-foreground">{sanitizeText(displayData.address || '')}</p>
                     </div>
                   </div>
                 )}
@@ -513,7 +514,7 @@ export default function UserProfilePage() {
                     <Building2 className="h-4 w-4 text-muted-foreground" />
                     <div>
                       <p className="text-sm font-medium">Company</p>
-                      <p className="text-sm text-muted-foreground">{displayData.companyName}</p>
+                      <p className="text-sm text-muted-foreground">{sanitizeText(displayData.companyName || '')}</p>
                     </div>
                   </div>
                 )}
@@ -523,12 +524,12 @@ export default function UserProfilePage() {
                     <div>
                       <p className="text-sm font-medium">Website</p>
                       <a
-                        href={displayData.website}
+                        href={sanitizeUrl(displayData.website || '')}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-sm text-primary hover:underline"
                       >
-                        {displayData.website}
+                        {sanitizeText(displayData.website || '')}
                       </a>
                     </div>
                   </div>
@@ -609,7 +610,7 @@ export default function UserProfilePage() {
             <div className="grid gap-4 md:grid-cols-2">
               {displayData?.facebookUrl && (
                 <a
-                  href={displayData.facebookUrl}
+                  href={sanitizeUrl(displayData.facebookUrl)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center gap-3 p-3 rounded-lg border hover:bg-accent transition-colors"
@@ -617,13 +618,13 @@ export default function UserProfilePage() {
                   <Facebook className="h-5 w-5 text-blue-600" />
                   <div>
                     <p className="text-sm font-medium">Facebook</p>
-                    <p className="text-xs text-muted-foreground truncate">{displayData.facebookUrl}</p>
+                    <p className="text-xs text-muted-foreground truncate">{sanitizeText(displayData.facebookUrl)}</p>
                   </div>
                 </a>
               )}
               {displayData?.instagramUrl && (
                 <a
-                  href={displayData.instagramUrl}
+                  href={sanitizeUrl(displayData.instagramUrl)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center gap-3 p-3 rounded-lg border hover:bg-accent transition-colors"
@@ -631,13 +632,13 @@ export default function UserProfilePage() {
                   <Instagram className="h-5 w-5 text-pink-600" />
                   <div>
                     <p className="text-sm font-medium">Instagram</p>
-                    <p className="text-xs text-muted-foreground truncate">{displayData.instagramUrl}</p>
+                    <p className="text-xs text-muted-foreground truncate">{sanitizeText(displayData.instagramUrl)}</p>
                   </div>
                 </a>
               )}
               {displayData?.twitterUrl && (
                 <a
-                  href={displayData.twitterUrl}
+                  href={sanitizeUrl(displayData.twitterUrl)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center gap-3 p-3 rounded-lg border hover:bg-accent transition-colors"
@@ -645,13 +646,13 @@ export default function UserProfilePage() {
                   <Twitter className="h-5 w-5 text-blue-400" />
                   <div>
                     <p className="text-sm font-medium">Twitter</p>
-                    <p className="text-xs text-muted-foreground truncate">{displayData.twitterUrl}</p>
+                    <p className="text-xs text-muted-foreground truncate">{sanitizeText(displayData.twitterUrl)}</p>
                   </div>
                 </a>
               )}
               {displayData?.linkedinUrl && (
                 <a
-                  href={displayData.linkedinUrl}
+                  href={sanitizeUrl(displayData.linkedinUrl)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center gap-3 p-3 rounded-lg border hover:bg-accent transition-colors"
@@ -659,7 +660,7 @@ export default function UserProfilePage() {
                   <Linkedin className="h-5 w-5 text-blue-700" />
                   <div>
                     <p className="text-sm font-medium">LinkedIn</p>
-                    <p className="text-xs text-muted-foreground truncate">{displayData.linkedinUrl}</p>
+                    <p className="text-xs text-muted-foreground truncate">{sanitizeText(displayData.linkedinUrl)}</p>
                   </div>
                 </a>
               )}

@@ -1,16 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuthStore } from '../../infrastructure/storage/auth-store';
 import { useTenantStore } from '../../infrastructure/storage/tenant-store';
-import { GetRolesUseCase } from '../../application/use-cases/role/get-roles.use-case';
-import { CreateRoleUseCase } from '../../application/use-cases/role/create-role.use-case';
-import { UpdateRoleUseCase } from '../../application/use-cases/role/update-role.use-case';
-import { GetRoleUseCase } from '../../application/use-cases/role/get-role.use-case';
-import { RoleRepository } from '../../infrastructure/api/role.repository';
-import { PermissionRepository } from '../../infrastructure/api/permission.repository';
-import { GetPermissionsUseCase } from '../../application/use-cases/permission/get-permissions.use-case';
-import { getErrorMessage } from '../../shared/utils/error-handler';
+import { useAuthPermissions } from '../../infrastructure/hooks/use-auth-permissions.hook';
+import { ServiceContainer } from '../../infrastructure/services/service-container';
 import { Role, Permission } from '../../shared/types';
+import { getErrorMessage } from '../../shared/utils/error-handler';
+import { sanitizeText } from '../../shared/utils/sanitize';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
@@ -24,23 +20,29 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '../components/ui/dialog';
-import { Shield, Plus, Pencil, Key, CheckCircle2 } from 'lucide-react';
+import { Shield, Plus, Pencil, Key, CheckCircle2, Check, X, Square } from 'lucide-react';
 import { useToast } from '../../shared/hooks/use-toast';
 import { Skeleton } from '../components/ui/skeleton';
+import { cn } from '../../shared/utils/cn';
 
 export default function RolesPage() {
   const { user } = useAuthStore();
   const { selectedTenant } = useTenantStore();
   const { toast } = useToast();
-  const isSuperAdmin = user?.roles?.includes('super_admin') || false;
-  const isAdmin = isSuperAdmin || user?.roles?.includes('admin') || false;
+  const { isSuperAdmin, isAdmin } = useAuthPermissions();
+  
+  // Memoize admin status to avoid infinite re-renders
+  const adminStatus = useMemo(() => ({
+    isSuperAdmin: isSuperAdmin(),
+    isAdmin: isAdmin()
+  }), [user?.roles]);
 
-  if (isSuperAdmin && !selectedTenant) {
+  if (adminStatus.isSuperAdmin && !selectedTenant) {
     return <Navigate to="/tenants" replace />;
   }
-
+ 
   // Regular users (non-admin) should not access this page
-  if (!isAdmin) {
+  if (!adminStatus.isAdmin) {
     return <Navigate to="/profile" replace />;
   }
 
@@ -61,13 +63,12 @@ export default function RolesPage() {
     permissionIds: [] as string[],
   });
 
-  const roleRepository = new RoleRepository();
-  const permissionRepository = new PermissionRepository();
-  const getRolesUseCase = new GetRolesUseCase(roleRepository);
-  const getRoleUseCase = new GetRoleUseCase(roleRepository);
-  const createRoleUseCase = new CreateRoleUseCase(roleRepository);
-  const updateRoleUseCase = new UpdateRoleUseCase(roleRepository);
-  const getPermissionsUseCase = new GetPermissionsUseCase(permissionRepository);
+  const serviceContainer = ServiceContainer.getInstance();
+  const getRolesUseCase = serviceContainer.roles.getRoles;
+  const getRoleUseCase = serviceContainer.roles.getRole;
+  const createRoleUseCase = serviceContainer.roles.createRole;
+  const updateRoleUseCase = serviceContainer.roles.updateRole;
+  const getPermissionsUseCase = serviceContainer.permissions.getPermissions;
 
   useEffect(() => {
     loadData();
@@ -177,6 +178,92 @@ export default function RolesPage() {
     return acc;
   }, {} as Record<string, Permission[]>);
 
+  // Get all unique actions across all permissions with custom sort order
+  const allActions = useMemo(() => {
+    const actions = new Set(permissions.map(p => p.action));
+    const actionList = Array.from(actions);
+    
+    // Define custom action order
+    const actionOrder = [
+      'create',
+      'view',
+      'read',
+      'update',
+      'delete',
+      'inv approval',
+      'acc approval',
+      'audit approval'
+    ];
+    
+    // Sort actions based on defined order, with any new actions at the end
+    return actionList.sort((a, b) => {
+      const indexA = actionOrder.indexOf(a);
+      const indexB = actionOrder.indexOf(b);
+      
+      // If both actions are in the defined order, sort by their positions
+      if (indexA !== -1 && indexB !== -1) {
+        return indexA - indexB;
+      }
+      
+      // If only action A is in the defined order, it comes first
+      if (indexA !== -1) {
+        return -1;
+      }
+      
+      // If only action B is in the defined order, it comes first
+      if (indexB !== -1) {
+        return 1;
+      }
+      
+      // If neither is in the defined order, sort alphabetically (new actions)
+      return a.localeCompare(b);
+    });
+  }, [permissions]);
+
+  // Check if all actions for a resource are selected
+  const isResourceFullySelected = (resource: string, selectedIds: string[]) => {
+    const resourcePerms = groupedPermissions[resource] || [];
+    return resourcePerms.length > 0 && resourcePerms.every(p => selectedIds.includes(p.id));
+  };
+
+  // Check if some actions for a resource are selected
+  const isResourcePartiallySelected = (resource: string, selectedIds: string[]) => {
+    const resourcePerms = groupedPermissions[resource] || [];
+    return resourcePerms.length > 0 && resourcePerms.some(p => selectedIds.includes(p.id)) && !isResourceFullySelected(resource, selectedIds);
+  };
+
+  // Toggle all actions for a resource
+  const toggleResourcePermissions = (resource: string, selectedIds: string[], setter: (ids: string[]) => void) => {
+    const resourcePerms = groupedPermissions[resource] || [];
+    if (isResourceFullySelected(resource, selectedIds)) {
+      // Deselect all
+      setter(selectedIds.filter(id => !resourcePerms.some(p => p.id === id)));
+    } else {
+      // Select all
+      const newIds = [...selectedIds];
+      resourcePerms.forEach(p => {
+        if (!newIds.includes(p.id)) {
+          newIds.push(p.id);
+        }
+      });
+      setter(newIds);
+    }
+  };
+
+  // Check if all resources have all actions selected
+  const isAllSelected = (selectedIds: string[]) => {
+    return permissions.length > 0 && permissions.every(p => selectedIds.includes(p.id));
+  };
+
+  // Toggle all permissions
+  const toggleAllPermissions = (selectedIds: string[], setter: (ids: string[]) => void) => {
+    if (isAllSelected(selectedIds)) {
+      setter([]);
+    } else {
+      setter(permissions.map(p => p.id));
+    }
+  };
+
   if (loading) {
     return (
       <div className="grid gap-4 md:grid-cols-2">
@@ -209,71 +296,179 @@ export default function RolesPage() {
               Create Role
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">
-            <DialogHeader>
+          <DialogContent className="max-w-[95vw] w-full h-[90vh] flex flex-col p-0">
+            <DialogHeader className="px-6 pt-6 pb-4 border-b">
               <DialogTitle>Create New Role</DialogTitle>
               <DialogDescription>
-                Define a new role and assign permissions to it.
+                Define a new role and assign permissions using the grid matrix below.
               </DialogDescription>
             </DialogHeader>
-            <form onSubmit={handleCreate} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="name">Role Name</Label>
-                <Input
-                  id="name"
-                  required
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="manager"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="description">Description</Label>
-                <Input
-                  id="description"
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  placeholder="Manager role with limited access"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Permissions</Label>
-                <div className="max-h-60 overflow-y-auto border rounded-lg p-4 space-y-3">
-                  {Object.entries(groupedPermissions).map(([resource, perms]) => (
-                    <div key={resource} className="space-y-2">
-                      <div className="font-medium text-sm text-muted-foreground uppercase tracking-wide flex items-center gap-2">
-                        <Key className="h-3 w-3" />
-                        {resource}
-                      </div>
-                      <div className="space-y-1.5 pl-5">
-                        {perms.map((permission) => (
-                          <label
-                            key={permission.id}
-                            className="flex items-center space-x-2 cursor-pointer hover:bg-accent p-2 rounded transition-colors"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={formData.permissionIds.includes(permission.id)}
-                              onChange={() => togglePermission(permission.id)}
-                              className="rounded border-gray-300"
-                            />
-                            <span className="text-sm flex-1">{permission.name}</span>
-                            {formData.permissionIds.includes(permission.id) && (
-                              <CheckCircle2 className="h-4 w-4 text-primary" />
-                            )}
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
+            <form onSubmit={handleCreate} className="flex flex-col flex-1 overflow-hidden">
+              <div className="px-6 py-4 border-b space-y-4 bg-muted/30">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="name">Role Name</Label>
+                    <Input
+                      id="name"
+                      required
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      placeholder="manager"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="description">Description</Label>
+                    <Input
+                      id="description"
+                      value={formData.description}
+                      onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                      placeholder="Manager role with limited access"
+                    />
+                  </div>
                 </div>
               </div>
-              <div className="flex gap-2 pt-4">
+              
+              <div className="flex-1 overflow-auto p-6">
+                <div className="space-y-4">
+                  {/* Summary Header */}
+                  <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg border">
+                    <div className="flex items-center gap-4">
+                      <div className="text-sm">
+                        <span className="font-medium">Selected:</span>{' '}
+                        <span className="text-primary">{formData.permissionIds.length}</span> / {permissions.length} permissions
+                      </div>
+                      <div className="text-sm">
+                        <span className="font-medium">Resources:</span>{' '}
+                        {Object.keys(groupedPermissions).length}
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => toggleAllPermissions(formData.permissionIds, (ids) => setFormData({ ...formData, permissionIds: ids }))}
+                      className="gap-2"
+                    >
+                      {isAllSelected(formData.permissionIds) ? (
+                        <>
+                          <X className="h-4 w-4" />
+                          Deselect All
+                        </>
+                      ) : (
+                        <>
+                          <Check className="h-4 w-4" />
+                          Select All
+                        </>
+                      )}
+                    </Button>
+                  </div>
+
+                  {/* Permission Grid Matrix */}
+                  <div className="border rounded-lg overflow-hidden">
+                    {/* Table Header */}
+                    <div className="grid bg-muted border-b" style={{ gridTemplateColumns: `200px repeat(${allActions.length}, minmax(120px, 1fr))` }}>
+                      <div className="p-3 font-semibold text-sm border-r sticky left-0 bg-muted z-10">
+                        Resource
+                      </div>
+                      {allActions.map((action) => (
+                        <div key={action} className="p-3 font-semibold text-sm text-center capitalize border-r last:border-r-0">
+                          {action}
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Table Body */}
+                    <div className="max-h-[calc(90vh-400px)] overflow-auto">
+                      {Object.entries(groupedPermissions).map(([resource, perms]) => (
+                        <div
+                          key={resource}
+                          className="grid border-b last:border-b-0 hover:bg-muted/30 transition-colors"
+                          style={{ gridTemplateColumns: `200px repeat(${allActions.length}, minmax(120px, 1fr))` }}
+                        >
+                          {/* Resource Name with Toggle */}
+                          <div className="p-3 font-medium text-sm border-r sticky left-0 bg-background z-10">
+                            <button
+                              type="button"
+                              onClick={() => toggleResourcePermissions(resource, formData.permissionIds, (ids) => setFormData({ ...formData, permissionIds: ids }))}
+                              className="flex items-center gap-2 hover:text-primary transition-colors w-full text-left"
+                            >
+                              <Key className="h-4 w-4 text-muted-foreground" />
+                              <span className="truncate">{sanitizeText(resource)}</span>
+                              {isResourceFullySelected(resource, formData.permissionIds) && (
+                                <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />
+                              )}
+                              {isResourcePartiallySelected(resource, formData.permissionIds) && (
+                                <Square className="h-4 w-4 text-primary flex-shrink-0" />
+                              )}
+                            </button>
+                          </div>
+
+                          {/* Action Checkboxes */}
+                          {allActions.map((action) => {
+                            const permission = perms.find(p => p.action === action);
+                            const isSelected = permission ? formData.permissionIds.includes(permission.id) : false;
+                            
+                            return (
+                              <div
+                                key={`${resource}-${action}`}
+                                className={cn(
+                                  "p-3 border-r last:border-r-0 flex items-center justify-center",
+                                  !permission && "bg-muted/20"
+                                )}
+                              >
+                                {permission ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => togglePermission(permission.id)}
+                                    className={cn(
+                                      "w-6 h-6 rounded border-2 flex items-center justify-center transition-all",
+                                      isSelected
+                                        ? "bg-primary border-primary text-primary-foreground"
+                                        : "border-input hover:border-primary hover:bg-primary/5"
+                                    )}
+                                  >
+                                    {isSelected && <Check className="h-4 w-4" />}
+                                  </button>
+                                ) : (
+                                  <span className="text-muted-foreground text-xs">—</span>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Legend */}
+                  <div className="flex items-center gap-6 text-sm text-muted-foreground p-4 bg-muted/30 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 rounded border-2 border-primary bg-primary flex items-center justify-center">
+                        <Check className="h-4 w-4 text-primary-foreground" />
+                      </div>
+                      <span>Selected</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 rounded border-2 border-input" />
+                      <span>Available</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs">—</span>
+                      <span>Not applicable</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="px-6 py-4 border-t bg-muted/30 flex gap-2">
                 <Button type="submit" className="flex-1">Create Role</Button>
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => setShowCreateForm(false)}
+                  onClick={() => {
+                    setShowCreateForm(false);
+                    setFormData({ name: '', description: '', permissionIds: [] });
+                  }}
                 >
                   Cancel
                 </Button>
@@ -308,10 +503,10 @@ export default function RolesPage() {
                       <div className="p-2 rounded-lg bg-gradient-to-br from-purple-500 to-pink-500">
                         <Shield className="h-4 w-4 text-white" />
                       </div>
-                      <CardTitle className="text-lg">{role.name}</CardTitle>
+                      <CardTitle className="text-lg">{sanitizeText(role.name)}</CardTitle>
                     </div>
                     <CardDescription className="mt-1">
-                      {role.description || 'No description'}
+                      {sanitizeText(role.description || 'No description')}
                     </CardDescription>
                   </div>
                   <Button
@@ -366,66 +561,171 @@ export default function RolesPage() {
 
       {/* Edit Role Dialog */}
       <Dialog open={showEditForm} onOpenChange={setShowEditForm}>
-        <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="max-w-[95vw] w-full h-[90vh] flex flex-col p-0">
+          <DialogHeader className="px-6 pt-6 pb-4 border-b">
             <DialogTitle>Edit Role</DialogTitle>
             <DialogDescription>
               Update role information and permission assignments for {selectedRole?.name}
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleUpdate} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="edit-name">Role Name</Label>
-              <Input
-                id="edit-name"
-                required
-                value={editFormData.name}
-                onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
-                placeholder="manager"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-description">Description</Label>
-              <Input
-                id="edit-description"
-                value={editFormData.description}
-                onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
-                placeholder="Manager role with limited access"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Permissions</Label>
-              <div className="max-h-60 overflow-y-auto border rounded-lg p-4 space-y-3">
-                {Object.entries(groupedPermissions).map(([resource, perms]) => (
-                  <div key={resource} className="space-y-2">
-                    <div className="font-medium text-sm text-muted-foreground uppercase tracking-wide flex items-center gap-2">
-                      <Key className="h-3 w-3" />
-                      {resource}
-                    </div>
-                    <div className="space-y-1.5 pl-5">
-                      {perms.map((permission) => (
-                        <label
-                          key={permission.id}
-                          className="flex items-center space-x-2 cursor-pointer hover:bg-accent p-2 rounded transition-colors"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={editFormData.permissionIds.includes(permission.id)}
-                            onChange={() => toggleEditPermission(permission.id)}
-                            className="rounded border-gray-300"
-                          />
-                          <span className="text-sm flex-1">{permission.name}</span>
-                          {editFormData.permissionIds.includes(permission.id) && (
-                            <CheckCircle2 className="h-4 w-4 text-primary" />
-                          )}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                ))}
+          <form onSubmit={handleUpdate} className="flex flex-col flex-1 overflow-hidden">
+            <div className="px-6 py-4 border-b space-y-4 bg-muted/30">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-name">Role Name</Label>
+                  <Input
+                    id="edit-name"
+                    required
+                    value={editFormData.name}
+                    onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                    placeholder="manager"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-description">Description</Label>
+                  <Input
+                    id="edit-description"
+                    value={editFormData.description}
+                    onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
+                    placeholder="Manager role with limited access"
+                  />
+                </div>
               </div>
             </div>
-            <div className="flex gap-2 pt-4">
+            
+            <div className="flex-1 overflow-auto p-6">
+              <div className="space-y-4">
+                {/* Summary Header */}
+                <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg border">
+                  <div className="flex items-center gap-4">
+                    <div className="text-sm">
+                      <span className="font-medium">Selected:</span>{' '}
+                      <span className="text-primary">{editFormData.permissionIds.length}</span> / {permissions.length} permissions
+                    </div>
+                    <div className="text-sm">
+                      <span className="font-medium">Resources:</span>{' '}
+                      {Object.keys(groupedPermissions).length}
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => toggleAllPermissions(editFormData.permissionIds, (ids) => setEditFormData({ ...editFormData, permissionIds: ids }))}
+                    className="gap-2"
+                  >
+                    {isAllSelected(editFormData.permissionIds) ? (
+                      <>
+                        <X className="h-4 w-4" />
+                        Deselect All
+                      </>
+                    ) : (
+                      <>
+                        <Check className="h-4 w-4" />
+                        Select All
+                      </>
+                    )}
+                  </Button>
+                </div>
+
+                {/* Permission Grid Matrix */}
+                <div className="border rounded-lg overflow-hidden">
+                  {/* Table Header */}
+                  <div className="grid bg-muted border-b" style={{ gridTemplateColumns: `200px repeat(${allActions.length}, minmax(120px, 1fr))` }}>
+                    <div className="p-3 font-semibold text-sm border-r sticky left-0 bg-muted z-10">
+                      Resource
+                    </div>
+                    {allActions.map((action) => (
+                      <div key={action} className="p-3 font-semibold text-sm text-center capitalize border-r last:border-r-0">
+                        {action}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Table Body */}
+                  <div className="max-h-[calc(90vh-400px)] overflow-auto">
+                    {Object.entries(groupedPermissions).map(([resource, perms]) => (
+                      <div
+                        key={resource}
+                        className="grid border-b last:border-b-0 hover:bg-muted/30 transition-colors"
+                        style={{ gridTemplateColumns: `200px repeat(${allActions.length}, minmax(120px, 1fr))` }}
+                      >
+                        {/* Resource Name with Toggle */}
+                        <div className="p-3 font-medium text-sm border-r sticky left-0 bg-background z-10">
+                          <button
+                            type="button"
+                            onClick={() => toggleResourcePermissions(resource, editFormData.permissionIds, (ids) => setEditFormData({ ...editFormData, permissionIds: ids }))}
+                            className="flex items-center gap-2 hover:text-primary transition-colors w-full text-left"
+                          >
+                            <Key className="h-4 w-4 text-muted-foreground" />
+                            <span className="truncate">{sanitizeText(resource)}</span>
+                            {isResourceFullySelected(resource, editFormData.permissionIds) && (
+                              <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />
+                            )}
+                            {isResourcePartiallySelected(resource, editFormData.permissionIds) && (
+                              <Square className="h-4 w-4 text-primary flex-shrink-0" />
+                            )}
+                          </button>
+                        </div>
+
+                        {/* Action Checkboxes */}
+                        {allActions.map((action) => {
+                          const permission = perms.find(p => p.action === action);
+                          const isSelected = permission ? editFormData.permissionIds.includes(permission.id) : false;
+                          
+                          return (
+                            <div
+                              key={`${resource}-${action}`}
+                              className={cn(
+                                "p-3 border-r last:border-r-0 flex items-center justify-center",
+                                !permission && "bg-muted/20"
+                              )}
+                            >
+                              {permission ? (
+                                <button
+                                  type="button"
+                                  onClick={() => toggleEditPermission(permission.id)}
+                                  className={cn(
+                                    "w-6 h-6 rounded border-2 flex items-center justify-center transition-all",
+                                    isSelected
+                                      ? "bg-primary border-primary text-primary-foreground"
+                                      : "border-input hover:border-primary hover:bg-primary/5"
+                                  )}
+                                >
+                                  {isSelected && <Check className="h-4 w-4" />}
+                                </button>
+                              ) : (
+                                <span className="text-muted-foreground text-xs">—</span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Legend */}
+                <div className="flex items-center gap-6 text-sm text-muted-foreground p-4 bg-muted/30 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded border-2 border-primary bg-primary flex items-center justify-center">
+                      <Check className="h-4 w-4 text-primary-foreground" />
+                    </div>
+                    <span>Selected</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded border-2 border-input" />
+                    <span>Available</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs">—</span>
+                    <span>Not applicable</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t bg-muted/30 flex gap-2">
               <Button type="submit" className="flex-1">Update Role</Button>
               <Button
                 type="button"

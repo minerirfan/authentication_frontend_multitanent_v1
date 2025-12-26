@@ -4,6 +4,7 @@ import { Input } from '../ui/input';
 import { Button } from '../ui/button';
 import { Separator } from '../ui/separator';
 import { SidebarTrigger } from './Sidebar';
+import { sanitizeText } from '../../../shared/utils/sanitize';
 
 interface BreadcrumbItem {
   label: string;
@@ -51,10 +52,10 @@ export function Header({ onMenuClick }: { onMenuClick: () => void }) {
                   to={crumb.href}
                   className="hover:text-foreground transition-colors"
                 >
-                  {crumb.label}
+                  {sanitizeText(crumb.label)}
                 </Link>
               ) : (
-                <span className="text-foreground font-medium">{crumb.label}</span>
+                <span className="text-foreground font-medium">{sanitizeText(crumb.label)}</span>
               )}
             </div>
           ))}

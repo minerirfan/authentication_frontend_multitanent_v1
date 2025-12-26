@@ -1,4 +1,5 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useMemo } from 'react';
 import { cn } from '../../../shared/utils/cn';
 import {
   LayoutDashboard,
@@ -15,8 +16,8 @@ import {
 } from 'lucide-react';
 import { useAuthStore } from '../../../infrastructure/storage/auth-store';
 import { useTenantStore } from '../../../infrastructure/storage/tenant-store';
-import { LogoutUseCase } from '../../../application/use-cases/auth/logout.use-case';
-import { AuthRepository } from '../../../infrastructure/api/auth.repository';
+import { useAuthPermissions } from '../../../infrastructure/hooks/use-auth-permissions.hook';
+import { ServiceContainer } from '../../../infrastructure/services/service-container';
 import { Button } from '../ui/button';
 import { Avatar, AvatarFallback } from '../ui/avatar';
 import {
@@ -29,6 +30,7 @@ import {
 } from '../ui/dropdown-menu';
 import { ThemeToggle } from '../theme/ThemeToggle';
 import { Sheet, SheetContent } from '../ui/sheet';
+import { sanitizeText } from '../../../shared/utils/sanitize';
 
 interface NavItem {
   title: string;
@@ -42,11 +44,16 @@ export function Sidebar({ mobileOpen, setMobileOpen }: { mobileOpen?: boolean; s
   const navigate = useNavigate();
   const { user } = useAuthStore();
   const { selectedTenant, clearSelectedTenant } = useTenantStore();
-  const authRepository = new AuthRepository();
-  const logoutUseCase = new LogoutUseCase(authRepository);
-
-  const isSuperAdmin = user?.roles?.includes('super_admin') || false;
-  const isAdmin = isSuperAdmin || user?.roles?.includes('admin') || false;
+  const { isSuperAdmin, isAdmin } = useAuthPermissions();
+  
+  // Memoize admin status to avoid infinite re-renders
+  const adminStatus = useMemo(() => ({
+    isSuperAdmin: isSuperAdmin(),
+    isAdmin: isAdmin()
+  }), [user?.roles]);
+  
+  const serviceContainer = ServiceContainer.getInstance();
+  const logoutUseCase = serviceContainer.auth.logout;
 
   const handleLogout = async () => {
     await logoutUseCase.execute();
@@ -56,7 +63,7 @@ export function Sidebar({ mobileOpen, setMobileOpen }: { mobileOpen?: boolean; s
 
   let navItems: NavItem[] = [];
 
-  if (isSuperAdmin) {
+  if (adminStatus.isSuperAdmin) {
     if (!selectedTenant) {
       navItems = [
         {
@@ -99,7 +106,7 @@ export function Sidebar({ mobileOpen, setMobileOpen }: { mobileOpen?: boolean; s
         },
       ];
     }
-  } else if (isAdmin) {
+  } else if (adminStatus.isAdmin) {
     // Tenant admin can manage users, roles, and permissions
     navItems = [
       {
@@ -148,7 +155,7 @@ export function Sidebar({ mobileOpen, setMobileOpen }: { mobileOpen?: boolean; s
     <div className="flex h-full flex-col">
       <div className="flex h-16 items-center border-b border-sidebar-border px-6">
         <Link
-          to={isAdmin ? "/dashboard" : `/profile/${user?.id}`}
+          to={adminStatus.isAdmin ? "/dashboard" : `/profile/${user?.id}`}
           className="flex items-center gap-2"
         >
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-primary/80">
@@ -197,15 +204,15 @@ export function Sidebar({ mobileOpen, setMobileOpen }: { mobileOpen?: boolean; s
       </nav>
 
       <div className="border-t border-sidebar-border p-4">
-        {isSuperAdmin && selectedTenant && (
+        {adminStatus.isSuperAdmin && selectedTenant && (
           <div className="mb-3 rounded-lg border border-sidebar-border bg-sidebar-accent/50 p-2">
             <div className="flex items-center justify-between">
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-medium text-sidebar-accent-foreground truncate">
-                  {selectedTenant.name}
+                  {sanitizeText(selectedTenant.name)}
                 </p>
                 <p className="text-xs text-sidebar-foreground/60 truncate">
-                  {selectedTenant.slug}
+                  {sanitizeText(selectedTenant.slug)}
                 </p>
               </div>
               <Button
@@ -231,15 +238,15 @@ export function Sidebar({ mobileOpen, setMobileOpen }: { mobileOpen?: boolean; s
             >
               <Avatar className="h-8 w-8">
                 <AvatarFallback className="bg-sidebar-primary text-sidebar-primary-foreground">
-                  {user?.firstName?.[0]}{user?.lastName?.[0]}
+                  {sanitizeText(user?.firstName?.[0] || '')}{sanitizeText(user?.lastName?.[0] || '')}
                 </AvatarFallback>
               </Avatar>
               <div className="flex-1 text-left min-w-0">
                 <p className="text-sm font-medium truncate">
-                  {user?.firstName} {user?.lastName}
+                  {sanitizeText(user?.firstName || '')} {sanitizeText(user?.lastName || '')}
                 </p>
                 <p className="text-xs text-sidebar-foreground/60 truncate">
-                  {isSuperAdmin ? 'Super Admin' : user?.email}
+                  {adminStatus.isSuperAdmin ? 'Super Admin' : sanitizeText(user?.email || '')}
                 </p>
               </div>
             </Button>

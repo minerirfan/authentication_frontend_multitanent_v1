@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../infrastructure/storage/auth-store';
 import { useTenantStore } from '../../infrastructure/storage/tenant-store';
+import { useAuthPermissions } from '../../infrastructure/hooks/use-auth-permissions.hook';
 import { apiClient } from '../../infrastructure/api/api-client';
 import { getErrorMessage } from '../../shared/utils/error-handler';
 import { PaginatedResult } from '../../shared/types/pagination';
@@ -9,6 +10,7 @@ import { extractData } from '../../shared/utils/pagination';
 import { format } from 'date-fns';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
+import { sanitizeText } from '../../shared/utils/sanitize';
 import {
   Dialog,
   DialogContent,
@@ -42,8 +44,15 @@ interface Tenant {
 export default function TenantsPage() {
   const { user } = useAuthStore();
   const { setSelectedTenant } = useTenantStore();
+  const { isSuperAdmin } = useAuthPermissions();
   const navigate = useNavigate();
   const { toast } = useToast();
+  
+  // Memoize admin status to avoid infinite re-renders
+  const adminStatus = useMemo(() => ({
+    isSuperAdmin: isSuperAdmin()
+  }), [user?.roles]);
+  
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -63,10 +72,10 @@ export default function TenantsPage() {
   });
 
   useEffect(() => {
-    if (user?.roles?.includes('super_admin')) {
+    if (adminStatus.isSuperAdmin) {
       loadTenants();
     }
-  }, [user]);
+  }, [user, adminStatus.isSuperAdmin]);
 
   const loadTenants = async () => {
     try {
@@ -167,7 +176,7 @@ export default function TenantsPage() {
     }
   };
 
-  if (!user?.roles?.includes('super_admin')) {
+  if (!adminStatus.isSuperAdmin) {
     return (
       <div className="flex items-center justify-center h-64">
         <Card className="border-destructive">
@@ -320,11 +329,11 @@ export default function TenantsPage() {
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3 flex-1 min-w-0">
                     <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-gradient-to-br from-green-500 to-emerald-500 text-white font-semibold flex-shrink-0">
-                      {tenant.name[0].toUpperCase()}
+                      {sanitizeText(tenant.name[0] || '').toUpperCase()}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <CardTitle className="text-lg truncate">{tenant.name}</CardTitle>
-                      <CardDescription className="font-mono text-xs truncate">{tenant.slug}</CardDescription>
+                      <CardTitle className="text-lg truncate">{sanitizeText(tenant.name)}</CardTitle>
+                      <CardDescription className="font-mono text-xs truncate">{sanitizeText(tenant.slug)}</CardDescription>
                     </div>
                   </div>
                   <DropdownMenu>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { AuthRepository } from '../../infrastructure/api/auth.repository';
 import { getErrorMessage } from '../../shared/utils/error-handler';
@@ -23,6 +23,18 @@ export default function RegisterPage() {
   });
 
   const authRepository = new AuthRepository();
+
+  // Fetch CSRF token on component mount
+  useEffect(() => {
+    const initCsrfToken = async () => {
+      try {
+        await authRepository.fetchCsrfToken();
+      } catch (error) {
+        console.warn('Failed to initialize CSRF token:', error);
+      }
+    };
+    initCsrfToken();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

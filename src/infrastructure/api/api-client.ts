@@ -1,4 +1,4 @@
-import axios, { AxiosInstance, AxiosError } from 'axios';
+import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { ApiResponse } from '../../shared/types';
 import { useAuthStore } from '../storage/auth-store';
 import { useTenantStore } from '../storage/tenant-store';
@@ -10,12 +10,13 @@ class ApiClient {
   constructor() {
     this.client = axios.create({
       baseURL: getApiBaseUrl(),
+      withCredentials: true,
       headers: {
         'Content-Type': 'application/json',
       },
     });
 
-    // Request interceptor to add auth token and tenantId for super admin
+    // Request interceptor to add auth token and tenantId
     this.client.interceptors.request.use(
       (config) => {
         const token = useAuthStore.getState().accessToken;
@@ -52,8 +53,9 @@ class ApiClient {
     this.client.interceptors.response.use(
       (response) => response,
       async (error: AxiosError<ApiResponse>) => {
-        const originalRequest = error.config as any;
+        const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
+        // Handle 401 Unauthorized - Refresh access token
         if (error.response?.status === 401 && !originalRequest._retry) {
           originalRequest._retry = true;
 
@@ -62,6 +64,8 @@ class ApiClient {
             if (refreshToken) {
               const response = await axios.post<ApiResponse>(`${getApiBaseUrl()}/auth/refresh`, {
                 refreshToken,
+              }, {
+                withCredentials: true,
               });
 
               if (response.data.results) {

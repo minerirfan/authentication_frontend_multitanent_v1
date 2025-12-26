@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { LoginUseCase } from '../../application/use-cases/auth/login.use-case';
 import { AuthRepository } from '../../infrastructure/api/auth.repository';
@@ -33,9 +33,10 @@ export default function LoginPage() {
         throw new Error('Login response is missing user data');
       }
 
-      // Redirect based on user role
-      const isSuperAdmin = result.user.roles?.includes('super_admin') || result.user.isSuperAdmin || false;
-      const isAdmin = isSuperAdmin || result.user.roles?.includes('admin') || false;
+      // Redirect based on user role (case-insensitive)
+      const roles = result.user.roles || [];
+      const isSuperAdmin = result.user.isSuperAdmin || roles.some(r => r.toLowerCase() === 'super_admin');
+      const isAdmin = isSuperAdmin || roles.some(r => r.toLowerCase() === 'admin');
 
       if (isAdmin) {
         navigate('/dashboard');
