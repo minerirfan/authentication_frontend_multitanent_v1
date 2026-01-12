@@ -27,6 +27,7 @@ export default function DashboardPage() {
   const { selectedTenant } = useTenantStore();
   const navigate = useNavigate();
   const { isSuperAdmin, isAdmin } = useAuthPermissions();
+  const companyId = isSuperAdmin() ? 'Super Admin' : user?.tenantId;
   
   // Memoize admin status to avoid infinite re-renders
   const adminStatus = useMemo(() => ({
@@ -57,6 +58,7 @@ export default function DashboardPage() {
 
   const loadStats = async () => {
     try {
+      console.log('Loading stats (company id: ' + companyId + ')...');
       const serviceContainer = ServiceContainer.getInstance();
       const getUsersUseCase = serviceContainer.users.getUsers;
       const getRolesUseCase = serviceContainer.roles.getRoles;
@@ -179,8 +181,11 @@ export default function DashboardPage() {
         <div className="space-y-1">
           <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
           <p className="text-muted-foreground">
-            Welcome back, <span className="font-semibold">{sanitizeText(user?.firstName || '')}</span>! Here's what's happening.
+            Welcome back, <span className="font-semibold">{sanitizeText(user?.firstName || '')}</span>!
           </p>
+        </div>
+        <div className="hidden md:flex items-center space-x-2">
+          {companyId ?? "-"}
         </div>
       </div>
 

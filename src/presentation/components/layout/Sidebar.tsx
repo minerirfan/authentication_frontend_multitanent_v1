@@ -13,6 +13,7 @@ import {
   LogOut,
   User,
   Settings,
+  Workflow,
 } from 'lucide-react';
 import { useAuthStore } from '../../../infrastructure/storage/auth-store';
 import { useTenantStore } from '../../../infrastructure/storage/tenant-store';
@@ -95,6 +96,11 @@ export function Sidebar({ mobileOpen, setMobileOpen }: { mobileOpen?: boolean; s
           icon: Key,
         },
         {
+          title: 'Workflows',
+          href: '/workflows',
+          icon: Workflow,
+        },
+        {
           title: 'Tenants',
           href: '/tenants',
           icon: Building2,
@@ -128,6 +134,11 @@ export function Sidebar({ mobileOpen, setMobileOpen }: { mobileOpen?: boolean; s
         title: 'Permissions',
         href: '/permissions',
         icon: Key,
+      },
+      {
+        title: 'Workflows',
+        href: '/workflows',
+        icon: Workflow,
       },
       {
         title: 'Profile',

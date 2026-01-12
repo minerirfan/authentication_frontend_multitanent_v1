@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { LoginUseCase } from '../../application/use-cases/auth/login.use-case';
 import { AuthRepository } from '../../infrastructure/api/auth.repository';

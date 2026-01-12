@@ -51,6 +51,27 @@ export interface Permission {
   description: string | null;
 }
 
+export interface Workflow {
+  id: string;
+  name: string;
+  description: string | null;
+  type: 'condition' | 'voucher';
+  status: 'active' | 'inactive' | 'draft';
+  steps: WorkflowStep[];
+  tenantId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkflowStep {
+  id: string;
+  stepNumber: number;
+  name: string;
+  description: string | null;
+  actionType: 'approval' | 'notification' | 'calculation' | 'validation';
+  config: Record<string, any>;
+}
+
 export interface AuthResponse {
   accessToken: string;
   refreshToken: string;

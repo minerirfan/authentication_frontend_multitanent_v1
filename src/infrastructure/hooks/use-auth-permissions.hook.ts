@@ -41,14 +41,14 @@ export function useAuthPermissions() {
    * Check if user is a super admin
    */
   const isSuperAdmin = (): boolean => {
-    return hasRole('SUPER_ADMIN');
+    return hasRole('super_admin');
   };
 
   /**
    * Check if user is a tenant admin
    */
   const isTenantAdmin = (): boolean => {
-    return hasRole('TENANT_ADMIN');
+    return hasRole('admin');
   };
 
   /**

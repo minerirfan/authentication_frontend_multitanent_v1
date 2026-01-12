@@ -3,6 +3,7 @@ import { RoleRepository } from '../api/role.repository';
 import { PermissionRepository } from '../api/permission.repository';
 import { UserProfileRepository } from '../api/user-profile.repository';
 import { AuthRepository } from '../api/auth.repository';
+import { WorkflowRepository } from '../api/workflow.repository';
 import { GetUsersUseCase } from '../../application/use-cases/user/get-users.use-case';
 import { GetUserUseCase } from '../../application/use-cases/user/get-user.use-case';
 import { CreateUserUseCase } from '../../application/use-cases/user/create-user.use-case';
@@ -17,6 +18,11 @@ import { GetUserProfileUseCase } from '../../application/use-cases/user-profile/
 import { UpdateUserProfileUseCase } from '../../application/use-cases/user-profile/update-user-profile.use-case';
 import { CreateUserProfileUseCase } from '../../application/use-cases/user-profile/create-user-profile.use-case';
 import { LogoutUseCase } from '../../application/use-cases/auth/logout.use-case';
+import { GetWorkflowsUseCase } from '../../application/use-cases/workflow/get-workflows.use-case';
+import { GetWorkflowUseCase } from '../../application/use-cases/workflow/get-workflow.use-case';
+import { CreateWorkflowUseCase } from '../../application/use-cases/workflow/create-workflow.use-case';
+import { UpdateWorkflowUseCase } from '../../application/use-cases/workflow/update-workflow.use-case';
+import { DeleteWorkflowUseCase } from '../../application/use-cases/workflow/delete-workflow.use-case';
  
 /**
  * Service Container
@@ -32,6 +38,7 @@ export class ServiceContainer {
   private permissionRepository: PermissionRepository;
   private userProfileRepository: UserProfileRepository;
   private authRepository: AuthRepository;
+  private workflowRepository: WorkflowRepository;
   
   // User Use Cases
   private getUsersUseCase: GetUsersUseCase;
@@ -57,12 +64,20 @@ export class ServiceContainer {
   // Auth Use Cases
   private logoutUseCase: LogoutUseCase;
   
+  // Workflow Use Cases
+  private getWorkflowsUseCase: GetWorkflowsUseCase;
+  private getWorkflowUseCase: GetWorkflowUseCase;
+  private createWorkflowUseCase: CreateWorkflowUseCase;
+  private updateWorkflowUseCase: UpdateWorkflowUseCase;
+  private deleteWorkflowUseCase: DeleteWorkflowUseCase;
+  
   private constructor() {
     this.userRepository = new UserRepository();
     this.roleRepository = new RoleRepository();
     this.permissionRepository = new PermissionRepository();
     this.userProfileRepository = new UserProfileRepository();
     this.authRepository = new AuthRepository();
+    this.workflowRepository = new WorkflowRepository();
     
     // User Use Cases
     this.getUsersUseCase = new GetUsersUseCase(this.userRepository);
@@ -87,6 +102,13 @@ export class ServiceContainer {
     
     // Auth Use Cases
     this.logoutUseCase = new LogoutUseCase(this.authRepository);
+    
+    // Workflow Use Cases
+    this.getWorkflowsUseCase = new GetWorkflowsUseCase(this.workflowRepository);
+    this.getWorkflowUseCase = new GetWorkflowUseCase(this.workflowRepository);
+    this.createWorkflowUseCase = new CreateWorkflowUseCase(this.workflowRepository);
+    this.updateWorkflowUseCase = new UpdateWorkflowUseCase(this.workflowRepository);
+    this.deleteWorkflowUseCase = new DeleteWorkflowUseCase(this.workflowRepository);
   }
   
   /**
@@ -136,6 +158,16 @@ export class ServiceContainer {
   get auth() {
     return {
       logout: this.logoutUseCase,
+    };
+  }
+  
+  get workflows() {
+    return {
+      getWorkflows: this.getWorkflowsUseCase,
+      getWorkflow: this.getWorkflowUseCase,
+      createWorkflow: this.createWorkflowUseCase,
+      updateWorkflow: this.updateWorkflowUseCase,
+      deleteWorkflow: this.deleteWorkflowUseCase,
     };
   }
 }

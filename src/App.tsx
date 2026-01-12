@@ -16,6 +16,7 @@ import RolesPage from './presentation/pages/RolesPage';
 import PermissionsPage from './presentation/pages/PermissionsPage';
 import TenantsPage from './presentation/pages/TenantsPage';
 import ApiDocsPage from './presentation/pages/ApiDocsPage';
+import WorkflowsPage from './presentation/pages/WorkflowsPage';
 import Layout from './presentation/layouts/Layout';
 import ProtectedRoute from './presentation/components/ProtectedRoute';
 import AdminRoute from './presentation/components/AdminRoute';
@@ -76,6 +77,7 @@ function App() {
             <Route path="profile/:userId" element={<UserProfilePage />} />
             <Route path="roles" element={<RolesPage />} />
             <Route path="permissions" element={<PermissionsPage />} />
+            <Route path="workflows" element={<WorkflowsPage />} />
             <Route path="tenants" element={<TenantsPage />} />
             <Route path="api-docs" element={<ApiDocsPage />} />
           </Route>
